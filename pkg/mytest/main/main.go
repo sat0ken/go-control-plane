@@ -11,15 +11,15 @@ import (
 	//"os"
 	//"time"
 
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/reflection"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	v2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
+	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	discoverygrpc "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
-    "github.com/envoyproxy/go-control-plane/pkg/server"
-    endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-    core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
-    discoverygrpc "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
+	"github.com/envoyproxy/go-control-plane/pkg/server"
 )
 
 // MakeEndpoint creates a localhost endpoint on a given port.
@@ -48,46 +48,44 @@ func MakeEndpoint(clusterName string, address string, port uint32) *v2.ClusterLo
 	}
 }
 
-
-
 func main() {
 
-    flag.Parse()
+	flag.Parse()
 
-    config := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
-    srv := server.NewServer(context.Background(), config, nil)
+	config := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
+	srv := server.NewServer(context.Background(), config, nil)
 
-    var endpoint []cache.Resource
-    endpoint = append(endpoint, MakeEndpoint("service1", "127.0.0.1", 3000))
+	var endpoint []cache.Resource
+	endpoint = append(endpoint, MakeEndpoint("some_service1", "127.0.0.1", 3000))
 
-    out := cache.NewSnapshot("0", endpoint, nil, nil, nil, nil)
-    fmt.Printf("%+v\n", out)
+	out := cache.NewSnapshot("0", endpoint, nil, nil, nil, nil)
+	fmt.Printf("%+v\n", out)
 
-    err := config.SetSnapshot("test-cluster/test-id", out)
+	err := config.SetSnapshot("test-cluster/test-id", out)
 	if err != nil {
-        log.Fatalf("SnapshotError :%v", err)
+		log.Fatalf("SnapshotError :%v", err)
 	}
 
-    port := ":18000"
+	port := ":18000"
 
-    lis, err := net.Listen("tcp", port)
-    if err != nil {
-        log.Fatalf("failed to listen: %v", err)
-    }
-    s := grpc.NewServer()
+	lis, err := net.Listen("tcp", port)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
 
-    v2.RegisterEndpointDiscoveryServiceServer(s, srv)
-    v2.RegisterClusterDiscoveryServiceServer(s, srv)
-    v2.RegisterListenerDiscoveryServiceServer(s, srv)
-    v2.RegisterRouteDiscoveryServiceServer(s, srv)
-    discoverygrpc.RegisterRuntimeDiscoveryServiceServer(s, srv)
-    reflection.Register(s)
+	discoverygrpc.RegisterAggregatedDiscoveryServiceServer(s, srv)
+	v2.RegisterEndpointDiscoveryServiceServer(s, srv)
+	v2.RegisterClusterDiscoveryServiceServer(s, srv)
+	v2.RegisterListenerDiscoveryServiceServer(s, srv)
+	v2.RegisterRouteDiscoveryServiceServer(s, srv)
+	discoverygrpc.RegisterRuntimeDiscoveryServiceServer(s, srv)
+	reflection.Register(s)
 
-    log.Printf("management server listening on %s\n", port)
-    if err := s.Serve(lis); err != nil {
-        log.Fatalf("failed to serve: %v", err)
-    }
+	log.Printf("management server listening on %s\n", port)
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 
-    s.GracefulStop()
+	s.GracefulStop()
 }
-

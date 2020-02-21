@@ -26,8 +26,6 @@ static_resources:
               routes:
               - match: { prefix: "/service/1" }
                 route: { cluster: some_service1 }
-              - match: { prefix: "/service/2" }
-                route: { cluster: some_service2 }
           access_log:
             - name: envoy.file_access_log
               config:
@@ -37,14 +35,35 @@ static_resources:
   clusters:
   - name: some_service1
     connect_timeout: 0.25s
-    type: STATIC
+    type: EDS
     lb_policy: ROUND_ROBIN
-    load_assignment:
-      cluster_name: some_service1
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: 127.0.0.1
-                port_value: 3000
+    eds_cluster_config:
+      eds_config:
+        api_config_source:
+          api_type: GRPC
+          grpc_services:
+            envoy_grpc:
+              cluster_name: xds_cluster
+  - name: xds_cluster
+    type: STATIC
+    connect_timeout: 10s
+    http2_protocol_options: {}
+    hosts:
+    - socket_address:
+        address: 127.0.0.1
+        port_value: 18000
+dynamic_resources:
+  cds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+      set_node_on_first_message_only: true
+  lds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+      set_node_on_first_message_only: true
