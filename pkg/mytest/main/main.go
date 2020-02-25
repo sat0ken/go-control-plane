@@ -17,10 +17,18 @@ import (
 	v2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	discoverygrpc "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	"github.com/envoyproxy/go-control-plane/pkg/server"
 )
+
+type hash struct{}
+
+func (hash) ID(node *core.Node) string {
+	if node == nil {
+		return "unknown"
+	}
+	return node.Cluster + "/" + node.Id
+}
 
 // MakeEndpoint creates a localhost endpoint on a given port.
 func MakeEndpoint(clusterName string, address string, port uint32) *v2.ClusterLoadAssignment {
@@ -52,7 +60,7 @@ func main() {
 
 	flag.Parse()
 
-	config := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
+	config := cache.NewSnapshotCache(false, hash{}, nil)
 	srv := server.NewServer(context.Background(), config, nil)
 
 	var endpoint []cache.Resource
@@ -74,12 +82,7 @@ func main() {
 	}
 	s := grpc.NewServer()
 
-	discoverygrpc.RegisterAggregatedDiscoveryServiceServer(s, srv)
 	v2.RegisterEndpointDiscoveryServiceServer(s, srv)
-	v2.RegisterClusterDiscoveryServiceServer(s, srv)
-	v2.RegisterListenerDiscoveryServiceServer(s, srv)
-	v2.RegisterRouteDiscoveryServiceServer(s, srv)
-	discoverygrpc.RegisterRuntimeDiscoveryServiceServer(s, srv)
 	reflection.Register(s)
 
 	log.Printf("management server listening on %s\n", port)
