@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	//cryptotls "crypto/tls"
-	"flag"
 	"fmt"
 	//"io/ioutil"
 	"log"
 	"net"
+    "sync"
 	//"os"
 	//"time"
 
@@ -20,6 +20,8 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	"github.com/envoyproxy/go-control-plane/pkg/server"
 )
+
+var debug bool
 
 type hash struct{}
 
@@ -58,16 +60,15 @@ func MakeEndpoint(clusterName string, address string, port uint32) *v2.ClusterLo
 
 func main() {
 
-	flag.Parse()
-
+    signal := make(chan struct{})
+    cb := &callbacks{signal: signal}
 	config := cache.NewSnapshotCache(false, hash{}, nil)
-	srv := server.NewServer(context.Background(), config, nil)
+	srv := server.NewServer(context.Background(), config, cb)
 
 	var endpoint []cache.Resource
 	endpoint = append(endpoint, MakeEndpoint("some_service1", "127.0.0.1", 3000))
 
 	out := cache.NewSnapshot("0", endpoint, nil, nil, nil, nil)
-	fmt.Printf("%+v\n", out)
 
 	err := config.SetSnapshot("test-cluster/test-id", out)
 	if err != nil {
@@ -92,3 +93,50 @@ func main() {
 
 	s.GracefulStop()
 }
+
+
+type callbacks struct {
+	signal   chan struct{}
+	fetches  int
+	requests int
+	mu       sync.Mutex
+}
+
+func (cb *callbacks) Report() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	log.Printf("server callbacks fetches=%d requests=%d\n", cb.fetches, cb.requests)
+}
+func (cb *callbacks) OnStreamOpen(_ context.Context, id int64, typ string) error {
+	if debug {
+		log.Printf("stream %d open for %s\n", id, typ)
+	}
+	return nil
+}
+func (cb *callbacks) OnStreamClosed(id int64) {
+	if debug {
+		log.Printf("stream %d closed\n", id)
+	}
+}
+func (cb *callbacks) OnStreamRequest(streamid int64, req *v2.DiscoveryRequest) error {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.requests++
+	if cb.signal != nil {
+		close(cb.signal)
+		cb.signal = nil
+	}
+	return nil
+}
+func (cb *callbacks) OnStreamResponse(int64, *v2.DiscoveryRequest, *v2.DiscoveryResponse) {}
+func (cb *callbacks) OnFetchRequest(_ context.Context, req *v2.DiscoveryRequest) error {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.fetches++
+	if cb.signal != nil {
+		close(cb.signal)
+		cb.signal = nil
+	}
+	return nil
+}
+func (cb *callbacks) OnFetchResponse(*v2.DiscoveryRequest, *v2.DiscoveryResponse) {}
